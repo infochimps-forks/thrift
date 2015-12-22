@@ -34,10 +34,18 @@
 #include <stdint.h>
 #endif
 #include <limits.h>
+#ifdef _MSC_VER
+#include "windows/config.h"
+#endif
 #include "main.h"
 #include "globals.h"
 #include "parse/t_program.h"
 #include "parse/t_scope.h"
+
+#ifdef _MSC_VER
+//warning C4065: switch statement contains 'default' but no 'case' labels
+#pragma warning(disable:4065)
+#endif
 
 /**
  * This global variable is used for automatic numbering of field indices etc.
@@ -515,6 +523,7 @@ Typedef:
   tok_typedef FieldType tok_identifier TypeAnnotations
     {
       pdebug("TypeDef -> tok_typedef FieldType tok_identifier");
+      validate_simple_identifier( $3);
       t_typedef *td = new t_typedef(g_program, $2, $3);
       $$ = td;
       if ($4 != NULL) {
@@ -536,6 +545,7 @@ Enum:
     {
       pdebug("Enum -> tok_enum tok_identifier { EnumDefList }");
       $$ = $4;
+      validate_simple_identifier( $2);
       $$->set_name($2);
       if ($6 != NULL) {
         $$->annotations_ = $6->annotations_;
@@ -581,7 +591,8 @@ EnumDef:
       if ($4 > INT_MAX) {
         pwarning(1, "64-bit value supplied for enum %s.\n", $2);
       }
-      $$ = new t_enum_value($2, $4);
+      validate_simple_identifier( $2);
+      $$ = new t_enum_value($2, static_cast<int>($4));
       if ($1 != NULL) {
         $$->set_doc($1);
       }
@@ -594,6 +605,7 @@ EnumDef:
   CaptureDocText tok_identifier TypeAnnotations CommaOrSemicolonOptional
     {
       pdebug("EnumDef -> tok_identifier");
+      validate_simple_identifier( $2);
       $$ = new t_enum_value($2);
       if ($1 != NULL) {
         $$->set_doc($1);
@@ -608,6 +620,7 @@ Senum:
   tok_senum tok_identifier '{' SenumDefList '}' TypeAnnotations
     {
       pdebug("Senum -> tok_senum tok_identifier { SenumDefList }");
+      validate_simple_identifier( $2);
       $$ = new t_typedef(g_program, $4, $2);
       if ($6 != NULL) {
         $$->annotations_ = $6->annotations_;
@@ -641,6 +654,7 @@ Const:
     {
       pdebug("Const -> tok_const FieldType tok_identifier = ConstValue");
       if (g_parse_mode == PROGRAM) {
+        validate_simple_identifier( $3);
         g_scope->resolve_const_value($5, $2);
         $$ = new t_const($2, $3, $5);
         validate_const_type($$);
@@ -661,7 +675,7 @@ ConstValue:
       $$ = new t_const_value();
       $$->set_integer($1);
       if (!g_allow_64bit_consts && ($1 < INT32_MIN || $1 > INT32_MAX)) {
-        pwarning(1, "64-bit constant \"%"PRIi64"\" may not work in all languages.\n", $1);
+        pwarning(1, "64-bit constant \"%" PRIi64"\" may not work in all languages.\n", $1);
       }
     }
 | tok_dub_constant
@@ -748,6 +762,7 @@ Struct:
   StructHead tok_identifier XsdAll '{' FieldList '}' TypeAnnotations
     {
       pdebug("Struct -> tok_struct tok_identifier { FieldList }");
+      validate_simple_identifier( $2);
       $5->set_xsd_all($3);
       $5->set_union($1 == struct_is_union);
       $$ = $5;
@@ -757,7 +772,7 @@ Struct:
         delete $7;
       }
     }
-    
+
 XsdAll:
   tok_xsd_all
     {
@@ -802,6 +817,7 @@ Xception:
   tok_xception tok_identifier '{' FieldList '}' TypeAnnotations
     {
       pdebug("Xception -> tok_xception tok_identifier { FieldList }");
+      validate_simple_identifier( $2);
       $4->set_name($2);
       $4->set_xception(true);
       $$ = $4;
@@ -815,6 +831,7 @@ Service:
   tok_service tok_identifier Extends '{' FlagArgs FunctionList UnflagArgs '}' TypeAnnotations
     {
       pdebug("Service -> tok_service tok_identifier { FunctionList }");
+      validate_simple_identifier( $2);
       $$ = $6;
       $$->set_name($2);
       $$->set_extends($3);
@@ -868,6 +885,7 @@ FunctionList:
 Function:
   CaptureDocText Oneway FunctionType tok_identifier '(' FieldList ')' Throws TypeAnnotations CommaOrSemicolonOptional
     {
+      validate_simple_identifier( $4);
       $6->set_name(std::string($4) + "_args");
       $$ = new t_function($3, $4, $6, $8, $2);
       if ($1 != NULL) {
@@ -932,6 +950,7 @@ Field:
           exit(1);
         }
       }
+      validate_simple_identifier($5);
       $$ = new t_field($4, $5, $2.value);
       $$->set_req($3);
       if ($6 != NULL) {
@@ -968,24 +987,24 @@ FieldIdentifier:
              * warn if the user-specified negative value isn't what
              * thrift would have auto-assigned.
              */
-            pwarning(1, "Nonpositive field key (%"PRIi64") differs from what would be "
+            pwarning(1, "Nonpositive field key (%" PRIi64") differs from what would be "
                      "auto-assigned by thrift (%d).\n", $1, y_field_val);
           }
           /*
            * Leave $1 as-is, and update y_field_val to be one less than $1.
            * The FieldList parsing will catch any duplicate key values.
            */
-          y_field_val = $1 - 1;
-          $$.value = $1;
+          y_field_val = static_cast<int32_t>($1 - 1);
+          $$.value = static_cast<int32_t>($1);
           $$.auto_assigned = false;
         } else {
-          pwarning(1, "Nonpositive value (%"PRIi64") not allowed as a field key.\n",
+          pwarning(1, "Nonpositive value (%d) not allowed as a field key.\n",
                    $1);
           $$.value = y_field_val--;
           $$.auto_assigned = true;
         }
       } else {
-        $$.value = $1;
+        $$.value = static_cast<int32_t>($1);
         $$.auto_assigned = false;
       }
     }
